@@ -1,9 +1,10 @@
 library(pracma)
 library(plot.matrix)
 
+# This works for multiple subjects with a csv file for each subject. In this example, I am only calling for one subject
 participant_n = 1
-setwd("behavioralexample")
-temp= list.files()
+setwd("behavioralexample.csv")
+temp= list.files()             
 day_1 = temp[startsWith(temp, "day1")]
 data = lapply(day_1, read.csv)
 
