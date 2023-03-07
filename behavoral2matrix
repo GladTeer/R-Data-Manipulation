@@ -1,0 +1,35 @@
+library(pracma)
+library(plot.matrix)
+
+participant_n = 1
+setwd("behavioralexample")
+temp= list.files()
+day_1 = temp[startsWith(temp, "day1")]
+data = lapply(day_1, read.csv)
+
+
+#1st block
+block = list()
+for(k in 1:participant_n){
+  block[[k]] = data[[k]][which(data[[k]]$trial_index==40):which(data[[k]]$trial_index==249),]
+}
+
+#get all correct responses
+block_correct = list()
+for(k in 1:participant_n){
+  block_correct[[k]] = block[[k]][block[[k]]$correct == "true",]
+}
+
+#fill in matrix
+mat = matrix(NA, nrow =14, ncol=14)
+colnames(mat)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
+rownames(mat) = colnames(mat)
+matlist = list()
+for(k in 1:participant_n){
+  for(i in 1:14){
+    for(j in 1:14){
+      mat[i,j] = mean(unlist(lapply(lapply(strsplit(gsub("\\[|\\]","",block_correct[[k]]$rt[which(block_correct[[k]]$note == colnames(mat)[j])[block_correct[[k]]$note[which(block_correct[[k]]$note == colnames(mat)[j])-1]==colnames(mat)[i]]]
+      ),","), as.numeric), mean)), na.rm=T)   #This line finds the rows for a specific note with correct input, within these rows, identify the ones with specific previous row with the correct input. Then turn the rt for those rows into numeric, then find their average (If there are multiple numbers).
+    }
+  }
+}
