@@ -7,7 +7,7 @@ library(plot.matrix)
 
 # In this example, I am only calling for one subject. but the code works for multiple subjects with a csv file for each subject.
 participant_n = 1                               #specifying subject number
-setwd("C:\\Users\\tommy\\桌面\\git")
+setwd("insert the directory of the folder which contains behavioral1")
 temp= list.files()             
 day_1 = temp[startsWith(temp, "behavioral1")]
 data = lapply(day_1, read.csv)
