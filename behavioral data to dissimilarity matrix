@@ -1,7 +1,7 @@
 # behavioral.csv is a dataset that consists of finger responses and its reaction time, recorded throughout the trials, by row.
 # There are five blocks with 210 trials in each.
 # Variable "note" is the finger movement that subjects are asked to perform. i.e. 1000 is pressing with the little finger; 1100 for the little & ring finger; 1111 for all fingers except the thumb.
-# I am interested in all pairwise reaction time when going from one movement to another. The rts will are to be mapped on a dissimilarity matrix for furthur analysis.
+# I am interested in all pairwise reaction time when going from one movement to another. The rts are to be mapped on a dissimilarity matrix for furthur analysis.
 library(pracma)
 library(plot.matrix)
 
