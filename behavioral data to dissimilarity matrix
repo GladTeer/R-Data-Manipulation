@@ -2,184 +2,203 @@
 # There are five blocks with 210 trials in each.
 # Variable "note" is the finger movement that subjects are asked to perform. i.e. 1000 is pressing with the little finger; 1100 for the little & ring finger; 1111 for all fingers except the thumb.
 # I am interested in all pairwise reaction time when going from one movement to another. The rts are to be mapped on a dissimilarity matrix for furthur analysis.
-library(pracma)
-library(plot.matrix)
-
-# In this example, I am only calling for one subject. but the code works for multiple subjects with a csv file for each subject.
-participant_n = 1                               #specifying subject number
-setwd("insert the directory of the folder which contains behavioral1")
-temp= list.files()             
-day_1 = temp[startsWith(temp, "behavioral1")]
-data = lapply(day_1, read.csv)
-
-
-#1st block  
-block = list()
-for(k in 1:participant_n){
-  block[[k]] = data[[k]][which(data[[k]]$trial_index==40):which(data[[k]]$trial_index==249),]
+################################# Functions ####################################
+#------------------------------------------------------------------------------#
+# This function takes the previous row $note and $correct and put them on the  #
+# current row. This is done for indexing pairwise relationships.               #
+prev.info = function(x)
+{
+  for(i in 2:nrow(x)){
+    x$prev_note[i]= x$note[i-1]
+    x$prev_correct[i]= x$correct[i-1]
+  }
+  return(x)
 }
 
-#get all correct responses. I am only interested in the rts of correct responses.
-block_correct = list()
-for(k in 1:participant_n){
-  block_correct[[k]] = block[[k]][block[[k]]$correct == "TRUE",]
+#------------------------------------------------------------------------------#
+# This function separates day 1 and 2. Create a new column for each csv,       #
+# indicating the day, then output two lists of csv for the two days.           #
+index.day = function(allfiles){
+  day1_csvlist = lapply(allfiles[startsWith(allfiles, "day1")], read.csv)
+  day1_csvlist = lapply(day1_csvlist, function(x) cbind(x, day = 1))
+  day2_csvlist = lapply(allfiles[startsWith(allfiles, "day2")], read.csv)
+  day2_csvlist = lapply(day2_csvlist, function(x) cbind(x, day = 2))
+  day2_csvlist = lapply(day2_csvlist, function(x) dplyr::select(x, -value))     #day 2 has a $value col. Remove.
+  dayx_csvlist = list(day1_csvlist,day2_csvlist)
+  return(dayx_csvlist)
 }
 
-#fill in matrix
-mat = matrix(NA, nrow =14, ncol=14)
-colnames(mat)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(mat) = colnames(mat)
-matlist = list()
-for(k in 1:participant_n){
-  for(i in 1:14){
-    for(j in 1:14){
-      mat[i,j] = mean(unlist(lapply(lapply(strsplit(gsub("\\[|\\]","",block_correct[[k]]$rt[which(block_correct[[k]]$note == colnames(mat)[j])[block_correct[[k]]$note[which(block_correct[[k]]$note == colnames(mat)[j])-1]==colnames(mat)[i]]]
-      ),","), as.numeric), mean)), na.rm=T)   #This line finds the rows for a specific note with correct input, within these rows, identify the ones with specific previous row with the correct input. Then turn the rt for those rows into numeric, then find their average (If there are multiple numbers).
-    }
+#------------------------------------------------------------------------------#
+# This function takes in a list. assigns subj ID to day 1 and day 2.           #
+index.subj = function(dayx_csvlist){
+  dayx_csvlist[[1]] = Map(function(x, n) cbind(x, subj = n), dayx_csvlist[[1]], 
+                          seq_along(dayx_csvlist[[1]]))
+  dayx_csvlist[[2]] = Map(function(x, n) cbind(x, subj = n), dayx_csvlist[[2]], 
+                          seq_along(dayx_csvlist[[2]]))
+  return(dayx_csvlist)
+}
+
+#------------------------------------------------------------------------------#
+# This function takes in csv of a subj. It retains useful rows, index the      #
+# blocks, and calls for prev() function which deals with pairwise information  #
+subj.reform = function(subj_raw){
+  subj_block = list()
+  prev_note = NA
+  prev_correct = NA
+  for(b in 1:5){
+    endrow = which(subj_raw$stimulus == 
+                     "<p>Great job, continue when ready!</p>")[-1][b]-1         #Square brackets [remove first element for block# vector][the nth block]<prev row>
+    startrow = endrow-209
+    subj_block[[b]] = subj_raw[startrow:endrow,]
+    subj_block[[b]] = cbind(subj_block[[b]], prev_note, prev_correct)
+    block_num = b
+    subj_block[[b]] = cbind(subj_block[[b]],block_num)
+    subj_block[[b]] = prev.info(subj_block[[b]])
+  }
+  subj_data = do.call(rbind, subj_block)
+  return(subj_data)
+}
+
+#------------------------------------------------------------------------------#
+# This function takes rt cell, converts to numeric and takes the mean.         #
+string2mean = function(x) {
+  mean(as.numeric(unlist(strsplit(
+    gsub("\\[|\\]","",x), ","))),na.rm=T)
+}
+
+#------------------------------------------------------------------------------#
+#                         Reform Rating                                        #
+rating.reform = function(subj_raw){
+  prev_note = NA
+  rating = NA
+  day1_endstring = "<p> Thank you participating in Part 1 of Learning Piano: the Science Edition! Confirm your completion below and see you soon for Part 2.<p>"
+  day2_endstring = "<p> Thank you participating in Part 2 of Learning Piano: the Science Edition! Confirm your completion below, and you will be redirected to our debriefing page.<p>"
+  if(subj_raw$day[1] == 1){
+    subj_rating = subj_raw[1109:which(subj_raw$stimulus == day1_endstring)-1,]  #Retain the Rating section for day 1 or day 2
+  }else if(subj_raw$day[1] == 2){
+    subj_rating = subj_raw[1109:which(subj_raw$stimulus == day2_endstring)-1,]
+  }
+  subj_rating = subj_rating[subj_rating$correct != "false",]                    #Drop false rows and rows without info
+  subj_rating = subj_rating[subj_rating$key_press != "[]",]
+  subj_rating = cbind(subj_rating,prev_note)                                    #create new col for prev_note
+  subj_rating = cbind(subj_rating,rating)
+  for(r in 2:nrow(subj_rating)){                                                #assign previous note to prev_note
+    subj_rating$prev_note[r] = subj_rating$note[r-1]
+  }
+  for(r in 3:nrow(subj_rating)){                                                #assign response to rating (on the same row)
+    subj_rating$rating[r] = subj_rating$response[r+1]
+  }
+  subj_rating = subj_rating[seq(3, nrow(subj_rating), 3), ]                     #Keep every third row
+  subj_rating$rating = as.numeric(gsub('[^[:digit:].]+', '', 
+                                       subj_rating$rating))                     #convert string to number for rating
+  return(subj_rating)
+}
+
+#------------------------------------------------------------------------------#
+#             Create New Columns Based on Finger Num and Chord                 #
+newcol.nfing = function(all_reformed_subj){
+  all_reformed_subj = all_reformed_subj %>%
+    mutate(note_finger_num = case_when(
+      note %in% c("1", "10", "100", "1000") ~ "1",
+      note %in% c("11", "110", "1100", "1010","101","1001") ~ "2",
+      note %in% c("1110", "111", "1011", "1101") ~ "3",
+      TRUE ~ NA_character_
+    ))
+  all_reformed_subj = all_reformed_subj %>%
+    mutate(prev_note_finger_num = case_when(
+      prev_note %in% c("1", "10", "100", "1000") ~ "1",
+      prev_note %in% c("11", "110", "1100", "1010","101","1001") ~ "2",
+      prev_note %in% c("1110", "111", "1011", "1101") ~ "3",
+      TRUE ~ NA_character_
+    ))
+  return(all_reformed_subj)
+}
+
+newcol.chord = function(all_reformed_subj){
+  all_reformed_subj = all_reformed_subj %>%
+    mutate(note_chord = case_when(
+      note %in% c("1000", "100", "1010", "101","11","1101","1110") ~ "C",
+      note %in% c("10","1","1100","1001","110","111","1011") ~ "F#",
+      TRUE ~ NA_character_
+    ))
+  all_reformed_subj = all_reformed_subj %>%
+    mutate(prev_note_chord = case_when(
+      prev_note %in% c("1000", "100", "1010", "101","11","1101","1110") ~ "C",
+      prev_note %in% c("10","1","1100","1001","110","111","1011") ~ "F#",
+      TRUE ~ NA_character_
+    ))
+  return(all_reformed_subj)
+}
+
+#----------------------------- Functions LOADED -------------------------------#
+
+############################# Data Import ######################################
+#------------------------------------------------------------------------------#
+#                           Data Loading                                       #
+setwd("C:\\Users\\tommy\\桌面\\Princeton Project\\rtfull_data")
+allfiles = list.files()
+dayx_csvlist = index.day(allfiles)
+dayxsubjn_csvlist = index.subj(dayx_csvlist)
+
+#------------------------------Import ENDS-------------------------------------#
+
+############################ RT Data Manipulation ##############################
+#------------------------------------------------------------------------------#
+#      Combine the list of csv into one long form df.                          #
+#      Also reformatting in the process.                                       #
+all_reformed_subj = data.frame()                                                
+for(x in seq_along(dayxsubjn_csvlist)){                                         #Loop through number of days based on the length of dayxsubjn_csvlist
+  for(n in seq_along(dayxsubjn_csvlist[[x]])){                                  #Loop through number of subj based on the length of dayxsubjn_csvlist[[x]] (num of subj in day x)
+    subj_raw = dayxsubjn_csvlist[[x]][[n]] 
+    reformed_subj = subj.reform(subj_raw)
+    all_reformed_subj = rbind(all_reformed_subj, reformed_subj)
   }
 }
 
-#2nd block
-block = list()
-for(k in 1:participant_n){
-  block[[k]] = data[[k]][which(data[[k]]$trial_index==251):which(data[[k]]$trial_index==461),]
-}
+#------------------------------------------------------------------------------#
+#      Create new column for mean_rt                                           #
+all_reformed_subj = cbind(all_reformed_subj, rt_mean=NA)                              
+all_reformed_subj$rt_mean<- apply(all_reformed_subj['rt'], 1, string2mean)      
 
-#get all correct responses
-block_correct = list()
-for(k in 1:participant_n){
-  block_correct[[k]] = block[[k]][block[[k]]$correct == "TRUE",]
-}
+#------------------------------------------------------------------------------#
+#                     Create new col for finger num                            #
+library(tidyverse)
+all_reformed_subj = newcol.nfing(all_reformed_subj)
+all_reformed_subj = newcol.chord(all_reformed_subj)
 
-#fill in matrix
-mat2 = matrix(NA, nrow =14, ncol=14)
-colnames(mat2)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(mat2) = colnames(mat2)
-mat2list = list()
-for(k in 1:participant_n){
-  for(i in 1:14){
-    for(j in 1:14){
-      mat2[i,j] = mean(unlist(lapply(lapply(strsplit(gsub("\\[|\\]","",block_correct[[k]]$rt[which(block_correct[[k]]$note == colnames(mat2)[j])[block_correct[[k]]$note[which(block_correct[[k]]$note == colnames(mat2)[j])-1]==colnames(mat2)[i]]]
-      ),","), as.numeric), mean)), na.rm=T)   #This line finds the rows for a specific note with correct input, within these rows, identify the ones with specific previous row with the correct input. Then turn the rt for those rows into numeric, then find their average (If there are multiple numbers).
-    }
-  }
-}
+#-------------------------------Manipulation ENDS------------------------------#
 
-#3rd block
-block = list()
-for(k in 1:participant_n){
-  block[[k]] = data[[k]][which(data[[k]]$trial_index==463):which(data[[k]]$trial_index==673),]
-}
-
-#get all correct responses
-block_correct = list()
-for(k in 1:participant_n){
-  block_correct[[k]] = block[[k]][block[[k]]$correct == "TRUE",]
-}
-
-#fill in matrix
-mat3 = matrix(NA, nrow =14, ncol=14)
-colnames(mat3)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(mat3) = colnames(mat3)
-mat3list = list()
-for(k in 1:participant_n){
-  for(i in 1:14){
-    for(j in 1:14){
-      mat3[i,j] = mean(unlist(lapply(lapply(strsplit(gsub("\\[|\\]","",block_correct[[k]]$rt[which(block_correct[[k]]$note == colnames(mat3)[j])[block_correct[[k]]$note[which(block_correct[[k]]$note == colnames(mat3)[j])-1]==colnames(mat3)[i]]]
-      ),","), as.numeric), mean)), na.rm=T)   #This line finds the rows for a specific note with correct input, within these rows, identify the ones with specific previous row with the correct input. Then turn the rt for those rows into numeric, then find their average (If there are multiple numbers).
-    }
-  }
-}
-
-
-#4th block
-block = list()
-for(k in 1:participant_n){
-  block[[k]] = data[[k]][which(data[[k]]$trial_index==675):which(data[[k]]$trial_index==885),]
-}
-
-#get all correct responses
-block_correct = list()
-for(k in 1:participant_n){
-  block_correct[[k]] = block[[k]][block[[k]]$correct == "TRUE",]
-}
-
-#fill in matrix
-mat4 = matrix(NA, nrow =14, ncol=14)
-colnames(mat4)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(mat4) = colnames(mat4)
-mat4list = list()
-for(k in 1:participant_n){
-  for(i in 1:14){
-    for(j in 1:14){
-      mat4[i,j] = mean(unlist(lapply(lapply(strsplit(gsub("\\[|\\]","",block_correct[[k]]$rt[which(block_correct[[k]]$note == colnames(mat4)[j])[block_correct[[k]]$note[which(block_correct[[k]]$note == colnames(mat4)[j])-1]==colnames(mat4)[i]]]
-      ),","), as.numeric), mean)), na.rm=T)   #This line finds the rows for a specific note with correct input, within these rows, identify the ones with specific previous row with the correct input. Then turn the rt for those rows into numeric, then find their average (If there are multiple numbers).
-    }
-  }
-}
-
-
-#5th block
-block = list()
-for(k in 1:participant_n){
-  block[[k]] = data[[k]][which(data[[k]]$trial_index==887):which(data[[k]]$trial_index==1097),]
-}
-
-#get all correct responses
-block_correct = list()
-for(k in 1:participant_n){
-  block_correct[[k]] = block[[k]][block[[k]]$correct == "TRUE",]
-}
-
-#fill in matrix
-mat5 = matrix(NA, nrow =14, ncol=14)
-colnames(mat5)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(mat5) = colnames(mat5)
-mat5list = list()
-for(k in 1:participant_n){
-  for(i in 1:14){
-    for(j in 1:14){
-      mat5[i,j] = mean(unlist(lapply(lapply(strsplit(gsub("\\[|\\]","",block_correct[[k]]$rt[which(block_correct[[k]]$note == colnames(mat5)[j])[block_correct[[k]]$note[which(block_correct[[k]]$note == colnames(mat5)[j])-1]==colnames(mat5)[i]]]
-      ),","), as.numeric), mean)), na.rm=T)   #This line finds the rows for a specific note with correct input, within these rows, identify the ones with specific previous row with the correct input. Then turn the rt for those rows into numeric, then find their average (If there are multiple numbers).
-    }
-  }
-}
-
-#Now that I have a matrix for every block, I can look for trend of rts over blocks. For now, I am interested in overall performance.
-#Find average of all mats. 
-allblocks_matlist<-list(mat,mat2,mat3,mat4,mat5)
-Y <- do.call(cbind, allblocks_matlist)
-Y <- array(Y, dim=c(dim(allblocks_matlist[[1]]), length(allblocks_matlist)))
-mean_rt = apply(Y, c(1, 2), mean, na.rm = TRUE)
-colnames(mean_rt)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(mean_rt) = colnames(mean_rt)
-
-
-#averaging upper and lower triangles. Then turn into array
-averagedvector =  vector("list", participant_n)
-for(n in 1:participant_n){
-  for(i in 1:91){
-    averagedvector[[n]][i]= mean(c(mean_rt[lower.tri(mean_rt)][i],t(mean_rt)[lower.tri(mean_rt)][i]))
-  }
-}
-
-#Put the array in the lower tri, and copy the lower tri to upper tri to produce a symmetrical matrix
-averagedmat = matrix(, nrow =14, ncol=14)
-colnames(averagedmat)= c(100,11,1010,1000,1101,101,1110,111,1011,1100,1,1001,110,10)
-rownames(averagedmat) = colnames(averagedmat)
-averagedreducedlist = vector("list", participant_n)
-for(n in 1:participant_n){
-  averagedmat[lower.tri(averagedmat)] = averagedvector[[n]]
-  averagedmat = t(averagedmat)
-  averagedmat[lower.tri(averagedmat)] = averagedvector[[n]]
-  diag(averagedmat) = 0
-  averagedreducedlist[[n]]=averagedmat
-}
-res = plot(averagedreducedlist[[1]],digit = 2 ,text.cell=list(pos=3, cex=0.75), col = heat.colors(7),breaks = c(200, 1000), key=NULL, axis.col = 3, cex.axis = .7)
+############################# RT Data Exploration ##############################
+#------------------------------------------------------------------------------#
+#                       Check rt_mean NAs, mean, SE                            #
+NAs = all_reformed_subj %>%
+  group_by(note, prev_note, day) %>% 
+  summarize(num_na = sum(is.na(rt_mean)))%>%
+  arrange(desc(num_na))
 
 
 
+summarise_rt_means = all_reformed_subj %>%
+  filter(correct == "true", prev_correct == "true", day == 1)%>% 
+  group_by(note, prev_note) %>% 
+  summarize(std_error = sd(rt_mean, na.rm = TRUE) / sqrt(sum(!is.na(rt_mean))))
+
+summarise_rt_means = all_reformed_subj %>%
+  filter(correct == "true", prev_correct == "true", day == 1)%>% 
+  group_by(note, prev_note) %>% 
+  summarize(mean = mean(rt_mean))
 
 
+pivot=all_reformed_subj %>% 
+  filter(correct == "true", prev_correct == "true", day == 1) %>% 
+  group_by(note, prev_note ) %>% 
+  summarize(grandmean = mean(rt_mean)) %>% 
+  pivot_wider(names_from = note, values_from = grandmean)
 
+pivot=all_reformed_subj %>% 
+  filter(correct == "true", prev_correct == "true", day == 1) %>% 
+  group_by(note, prev_note ) %>% 
+  summarize(std_error = sd(rt_mean, na.rm = TRUE) / sqrt(sum(!is.na(rt_mean)))) %>% 
+  pivot_wider(names_from = note, values_from = std_error)
 
+#---------------------------- Exploration ENDS --------------------------------#
